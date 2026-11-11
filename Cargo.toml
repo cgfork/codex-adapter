@@ -1,0 +1,41 @@
+[package]
+name = "adapter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[workspace]
+members = ["crates/codexbridge", "crates/tgbot"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[workspace.dependencies]
+codexbridge = { path = "crates/codexbridge" }
+pulldown-cmark = { version = "0.13", default-features = false }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "socks"] }
+serde_json = "1"
+tgbot = { path = "crates/tgbot" }
+teloxide = { version = "0.17", default-features = false, features = ["ctrlc_handler", "macros", "rustls"] }
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.clippy]
+all = "warn"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+codexbridge.workspace = true
+serde_json.workspace = true
+teloxide.workspace = true
+tgbot.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
