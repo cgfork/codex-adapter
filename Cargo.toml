@@ -1,11 +1,11 @@
 [package]
-name = "adapter"
+name = "codebridge"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [workspace]
-members = ["crates/codexbridge", "crates/tgbot"]
+members = ["crates/core", "crates/codexbridge", "crates/tgbot"]
 resolver = "3"
 
 [workspace.package]
@@ -14,6 +14,7 @@ edition = "2024"
 rust-version = "1.85"
 
 [workspace.dependencies]
+codebridge-core = { path = "crates/core" }
 codexbridge = { path = "crates/codexbridge" }
 pulldown-cmark = { version = "0.13", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "socks"] }
@@ -27,15 +28,23 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [workspace.lints.clippy]
 all = "warn"
 
+[patch.crates-io]
+# E0365 fix from https://github.com/GnomedDev/proc-macro-error-2/pull/14.
+proc-macro-error2 = { path = "vendor/proc-macro-error2" }
+
 [dependencies]
+codebridge-core.workspace = true
 clap = { version = "4.5", features = ["derive"] }
 codexbridge.workspace = true
-serde_json.workspace = true
 teloxide.workspace = true
 tgbot.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio = { workspace = true, features = ["net"] }
 
 [lints]
 workspace = true

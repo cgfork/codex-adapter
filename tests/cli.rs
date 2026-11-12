@@ -1,7 +1,7 @@
 use std::process::{Command, Output, Stdio};
 
-fn adapter() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_adapter"));
+fn codebridge() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_codebridge"));
     command
         .env_clear()
         .env("PATH", "")
@@ -12,7 +12,7 @@ fn adapter() -> Command {
 }
 
 fn run(command: &mut Command) -> Output {
-    command.output().expect("adapter should start")
+    command.output().expect("codebridge should start")
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -22,7 +22,7 @@ fn text(bytes: &[u8]) -> String {
 fn assert_success(output: &Output) {
     assert!(
         output.status.success(),
-        "adapter failed with {}\nstdout: {}\nstderr: {}",
+        "codebridge failed with {}\nstdout: {}\nstderr: {}",
         output.status,
         text(&output.stdout),
         text(&output.stderr)
@@ -32,7 +32,7 @@ fn assert_success(output: &Output) {
 fn assert_failure(output: &Output) {
     assert!(
         !output.status.success(),
-        "adapter unexpectedly succeeded\nstdout: {}\nstderr: {}",
+        "codebridge unexpectedly succeeded\nstdout: {}\nstderr: {}",
         text(&output.stdout),
         text(&output.stderr)
     );
@@ -45,10 +45,10 @@ fn assert_failure(output: &Output) {
 #[test]
 fn top_level_help_documents_commands_and_global_options() {
     for arguments in [["--help"].as_slice(), ["help"].as_slice()] {
-        let output = run(adapter().args(arguments));
+        let output = run(codebridge().args(arguments));
         assert_success(&output);
         let help = text(&output.stdout);
-        for expected in ["Usage:", "adapter", "exec", "bridge", "--cwd", "--codex"] {
+        for expected in ["Usage:", "codebridge", "exec", "bridge", "--cwd", "--codex"] {
             assert!(
                 help.contains(expected),
                 "missing {expected:?} in help: {help}"
@@ -69,7 +69,7 @@ fn top_level_help_documents_commands_and_global_options() {
 fn subcommand_help_works_without_a_telegram_token() {
     for subcommand in ["exec", "bridge"] {
         for arguments in [[subcommand, "--help"], ["help", subcommand]] {
-            let output = run(adapter().args(arguments));
+            let output = run(codebridge().args(arguments));
             assert_success(&output);
             let help = text(&output.stdout);
             for expected in ["Usage:", subcommand, "--cwd", "--codex"] {
@@ -117,7 +117,7 @@ fn a_subcommand_is_required_even_when_global_options_are_present() {
         ["--cwd", "."].as_slice(),
         ["--codex", "codex"].as_slice(),
     ] {
-        let output = run(adapter().args(arguments));
+        let output = run(codebridge().args(arguments));
         assert_failure(&output);
         let error = text(&output.stderr);
         assert!(
@@ -145,7 +145,7 @@ fn invalid_arguments_are_rejected_with_a_diagnostic() {
         &["exec", "--codex"],
     ];
     for arguments in cases {
-        let output = run(adapter().args(*arguments));
+        let output = run(codebridge().args(*arguments));
         assert_failure(&output);
         let error = text(&output.stderr).to_lowercase();
         assert!(
@@ -157,7 +157,7 @@ fn invalid_arguments_are_rejected_with_a_diagnostic() {
 
 #[test]
 fn bridge_proxy_requires_a_value() {
-    let output = run(adapter()
+    let output = run(codebridge()
         .env("TELOXIDE_TOKEN", "dummy-telegram-token")
         .args(["bridge", "--proxy"]));
     assert_failure(&output);
@@ -172,7 +172,7 @@ fn bridge_proxy_requires_a_value() {
 #[test]
 fn bridge_rejects_missing_empty_and_whitespace_only_tokens() {
     for token in [None, Some(""), Some(" \t\r\n ")] {
-        let mut command = adapter();
+        let mut command = codebridge();
         command.arg("bridge");
         if let Some(token) = token {
             command.env("TELOXIDE_TOKEN", token);
@@ -189,7 +189,7 @@ fn bridge_rejects_missing_empty_and_whitespace_only_tokens() {
 
 #[cfg(unix)]
 mod unix {
-    use super::{adapter, assert_failure, assert_success, run, text};
+    use super::{assert_failure, assert_success, codebridge, run, text};
     use std::{
         fs,
         os::unix::fs::PermissionsExt,
@@ -203,14 +203,14 @@ mod unix {
     const STDOUT: &str = "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"hello\"}}\nraw output: 雪\n\u{1b}[32mgreen\u{1b}[0m";
     const STDERR: &str = "fake Codex diagnostic\nsecond line without a trailing newline";
     const FAKE_CODEX: &str = r#"#!/bin/sh
-printf 'started\n' > "$ADAPTER_TEST_ROOT/started"
-printf '%s\n' "$0" > "$ADAPTER_TEST_ROOT/executable"
-printf '%s\n' "$@" > "$ADAPTER_TEST_ROOT/arguments"
-pwd -P > "$ADAPTER_TEST_ROOT/cwd"
-/bin/cat > "$ADAPTER_TEST_ROOT/stdin"
-printf '%s' "$ADAPTER_TEST_STDOUT"
-printf '%s' "$ADAPTER_TEST_STDERR" >&2
-exit "$ADAPTER_TEST_STATUS"
+printf 'started\n' > "$CODEBRIDGE_TEST_ROOT/started"
+printf '%s\n' "$0" > "$CODEBRIDGE_TEST_ROOT/executable"
+printf '%s\n' "$@" > "$CODEBRIDGE_TEST_ROOT/arguments"
+pwd -P > "$CODEBRIDGE_TEST_ROOT/cwd"
+/bin/cat > "$CODEBRIDGE_TEST_ROOT/stdin"
+printf '%s' "$CODEBRIDGE_TEST_STDOUT"
+printf '%s' "$CODEBRIDGE_TEST_STDERR" >&2
+exit "$CODEBRIDGE_TEST_STATUS"
 "#;
 
     struct Fixture {
@@ -228,7 +228,7 @@ exit "$ADAPTER_TEST_STATUS"
                 .expect("system clock should be after 1970")
                 .as_nanos();
             let root = std::env::temp_dir().join(format!(
-                "adapter cli {} {timestamp} {serial}",
+                "codebridge cli {} {timestamp} {serial}",
                 std::process::id()
             ));
             fs::create_dir(&root).expect("create fixture directory");
@@ -254,15 +254,15 @@ exit "$ADAPTER_TEST_STATUS"
         }
 
         fn command(&self) -> Command {
-            let mut command = adapter();
+            let mut command = codebridge();
             command
                 .current_dir(&self.invocation_directory)
                 .env("PATH", self.root.join("bin"))
                 .env("HOME", &self.root)
-                .env("ADAPTER_TEST_ROOT", &self.root)
-                .env("ADAPTER_TEST_STDOUT", STDOUT)
-                .env("ADAPTER_TEST_STDERR", STDERR)
-                .env("ADAPTER_TEST_STATUS", "0");
+                .env("CODEBRIDGE_TEST_ROOT", &self.root)
+                .env("CODEBRIDGE_TEST_STDOUT", STDOUT)
+                .env("CODEBRIDGE_TEST_STDERR", STDERR)
+                .env("CODEBRIDGE_TEST_STATUS", "0");
             command
         }
 
@@ -331,7 +331,7 @@ exit "$ADAPTER_TEST_STATUS"
         let proxy_password = "private-proxy-password-8f31";
         let output = run(fixture
             .command()
-            .env("RUST_LOG", "adapter=debug")
+            .env("RUST_LOG", "codebridge=debug")
             .env("TELOXIDE_TOKEN", token)
             .env(
                 "TELOXIDE_PROXY",
@@ -367,7 +367,7 @@ exit "$ADAPTER_TEST_STATUS"
     #[test]
     fn invalid_log_filter_silently_falls_back_to_default_logging() {
         let fixture = Fixture::new();
-        let filter = "adapter=definitely-not-a-level";
+        let filter = "codebridge=definitely-not-a-level";
         let output = run(fixture
             .command()
             .env("RUST_LOG", filter)
@@ -413,7 +413,7 @@ exit "$ADAPTER_TEST_STATUS"
         let output = run(fixture
             .command()
             .env("RUST_LOG", "off")
-            .env("ADAPTER_TEST_STATUS", "23")
+            .env("CODEBRIDGE_TEST_STATUS", "23")
             .args(["exec", prompt]));
         assert_eq!(output.status.code(), Some(23));
         assert_eq!(output.stdout, STDOUT.as_bytes());
@@ -490,7 +490,7 @@ exit "$ADAPTER_TEST_STATUS"
         let prompt = "produce partial output then fail";
         let output = run(fixture
             .command()
-            .env("ADAPTER_TEST_STATUS", "23")
+            .env("CODEBRIDGE_TEST_STATUS", "23")
             .args(["exec", prompt]));
         assert_eq!(output.status.code(), Some(23));
         assert_eq!(output.stdout, STDOUT.as_bytes());
@@ -503,8 +503,8 @@ exit "$ADAPTER_TEST_STATUS"
         let fixture = Fixture::new();
         let output = run(fixture
             .command()
-            .env("ADAPTER_TEST_STDOUT", "")
-            .env("ADAPTER_TEST_STDERR", "")
+            .env("CODEBRIDGE_TEST_STDOUT", "")
+            .env("CODEBRIDGE_TEST_STDERR", "")
             .args(["exec", "quiet prompt"]));
         assert_success(&output);
         assert!(output.stdout.is_empty());

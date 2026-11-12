@@ -1,7 +1,4 @@
-mod access;
 mod bridge;
-mod outbox;
-mod sessions;
 
 use std::{
     io::{self, Write},
@@ -10,11 +7,12 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
-use codexbridge::{BridgeResult, Codex};
+use codebridge_core::BridgeResult;
+use codexbridge::Codex;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "adapter",
+    name = "codebridge",
     version,
     about = "Run Codex tasks or bridge Codex to Telegram"
 )]
@@ -42,7 +40,7 @@ enum Command {
     },
     #[command(
         about = "Bridge Telegram chats to Codex (requires TELOXIDE_TOKEN)",
-        after_help = "Proxy examples:\n  adapter bridge --proxy http://127.0.0.1:8080\n  adapter bridge --proxy socks5h://127.0.0.1:1080\n\nsocks5h resolves Telegram hostnames through the proxy.\nProxy selection: --proxy > TELOXIDE_PROXY > standard HTTPS_PROXY/ALL_PROXY via reqwest.\nTELOXIDE_PROXY affects only Telegram; standard proxy variables are inherited by Codex."
+        after_help = "Proxy examples:\n  codebridge bridge --proxy http://127.0.0.1:8080\n  codebridge bridge --proxy socks5h://127.0.0.1:1080\n\nsocks5h resolves Telegram hostnames through the proxy.\nProxy selection: --proxy > TELOXIDE_PROXY > standard HTTPS_PROXY/ALL_PROXY via reqwest.\nTELOXIDE_PROXY affects only Telegram; standard proxy variables are inherited by Codex."
     )]
     Bridge {
         #[arg(
@@ -75,7 +73,9 @@ async fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                tracing_subscriber::EnvFilter::new("warn,adapter=info,tgbot=info,codexbridge=info")
+                tracing_subscriber::EnvFilter::new(
+                    "warn,codebridge=info,codebridge_core=info,tgbot=info,codexbridge=info",
+                )
             }),
         )
         .with_writer(io::stderr)
@@ -84,7 +84,7 @@ async fn main() -> ExitCode {
     match run(cli).await {
         Ok(code) => ExitCode::from(code),
         Err(error) => {
-            tracing::error!(%error, "Adapter failed");
+            tracing::error!(%error, "Codebridge failed");
             ExitCode::FAILURE
         }
     }
@@ -171,9 +171,16 @@ mod tests {
 
     #[test]
     fn globals_work_on_either_side_of_the_subcommand() {
-        let cli =
-            Cli::try_parse_from(["adapter", "-C", "/tmp", "exec", "hello", "--codex", "fake"])
-                .unwrap();
+        let cli = Cli::try_parse_from([
+            "codebridge",
+            "-C",
+            "/tmp",
+            "exec",
+            "hello",
+            "--codex",
+            "fake",
+        ])
+        .unwrap();
         assert_eq!(cli.cwd.to_str(), Some("/tmp"));
         assert_eq!(cli.codex.to_str(), Some("fake"));
         assert!(matches!(cli.command, Command::Exec { prompt } if prompt == "hello"));
@@ -181,7 +188,7 @@ mod tests {
 
     #[test]
     fn bridge_user_restriction_is_optional_and_accepts_positive_u64_ids() {
-        let cli = Cli::try_parse_from(["adapter", "bridge"]).unwrap();
+        let cli = Cli::try_parse_from(["codebridge", "bridge"]).unwrap();
         assert!(matches!(
             cli.command,
             Command::Bridge {
@@ -191,7 +198,7 @@ mod tests {
         ));
         for user_id in [1, 4_294_967_296, u64::MAX] {
             let cli = Cli::try_parse_from([
-                "adapter",
+                "codebridge",
                 "bridge",
                 "--allowed-user-id",
                 &user_id.to_string(),
@@ -210,10 +217,10 @@ mod tests {
     #[test]
     fn requires_a_subcommand_and_exactly_one_nonblank_prompt() {
         for arguments in [
-            vec!["adapter"],
-            vec!["adapter", "exec"],
-            vec!["adapter", "exec", " \n"],
-            vec!["adapter", "exec", "one", "two"],
+            vec!["codebridge"],
+            vec!["codebridge", "exec"],
+            vec!["codebridge", "exec", " \n"],
+            vec!["codebridge", "exec", "one", "two"],
         ] {
             assert!(Cli::try_parse_from(arguments).is_err());
         }

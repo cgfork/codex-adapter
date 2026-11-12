@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+codebridge-core.workspace = true
 codexbridge.workspace = true
 pulldown-cmark.workspace = true
 reqwest.workspace = true

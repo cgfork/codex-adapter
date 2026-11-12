@@ -3,20 +3,6 @@
 version = 4
 
 [[package]]
-name = "adapter"
-version = "0.1.0"
-dependencies = [
- "clap",
- "codexbridge",
- "serde_json",
- "teloxide",
- "tgbot",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -241,9 +227,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
+name = "codebridge"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "codebridge-core",
+ "codexbridge",
+ "serde_json",
+ "teloxide",
+ "tgbot",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "codebridge-core"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "codexbridge"
 version = "0.1.0"
 dependencies = [
+ "codebridge-core",
  "serde_json",
  "tokio",
  "tracing",
@@ -1051,8 +1061,6 @@ dependencies = [
 [[package]]
 name = "proc-macro-error2"
 version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11ec05c52be0a07b08061f7dd003e7d7092e0472bc731b4af7bb1ef876109802"
 dependencies = [
  "proc-macro-error-attr2",
  "proc-macro2",
@@ -1672,6 +1680,7 @@ dependencies = [
 name = "tgbot"
 version = "0.1.0"
 dependencies = [
+ "codebridge-core",
  "codexbridge",
  "pulldown-cmark",
  "reqwest",

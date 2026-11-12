@@ -1,17 +1,23 @@
-use codexbridge::{AgentOutput, JsonlError, parse_jsonl};
+use codebridge_core::AgentOutput;
+use codexbridge::{JsonlError, parse_jsonl};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
 use crate::text::{HtmlWriter, escape_html};
 
 pub fn render_jsonl(stdout: &str) -> Result<Vec<String>, JsonlError> {
+    let output = parse_jsonl(stdout)?;
+    Ok(render_output(&output))
+}
+
+pub fn render_output(output: &[AgentOutput]) -> Vec<String> {
     let mut messages = Vec::new();
-    for output in parse_jsonl(stdout)? {
+    for output in output {
         let mut writer = HtmlWriter::default();
         match output {
-            AgentOutput::Message(markdown) => markdown_html(&mut writer, &markdown),
+            AgentOutput::Message(markdown) => markdown_html(&mut writer, markdown),
             AgentOutput::Plan(markdown) => {
                 heading(&mut writer, "Plan");
-                markdown_html(&mut writer, &markdown);
+                markdown_html(&mut writer, markdown);
             }
             AgentOutput::Command {
                 command,
@@ -19,10 +25,10 @@ pub fn render_jsonl(stdout: &str) -> Result<Vec<String>, JsonlError> {
                 exit_code,
             } => {
                 heading(&mut writer, "Command");
-                writer.code(&command, true);
+                writer.code(command, true);
                 if !output.is_empty() {
                     writer.text("\n");
-                    writer.code(&output, true);
+                    writer.code(output, true);
                 }
                 if let Some(exit_code) = exit_code {
                     writer.text(&format!("\nExit code: {exit_code}"));
@@ -32,18 +38,18 @@ pub fn render_jsonl(stdout: &str) -> Result<Vec<String>, JsonlError> {
                 heading(&mut writer, "Files changed");
                 for path in paths {
                     writer.text("• ");
-                    writer.code(&path, false);
+                    writer.code(path, false);
                     writer.text("\n");
                 }
             }
             AgentOutput::Error(message) => {
                 heading(&mut writer, "Error");
-                writer.text(&message);
+                writer.text(message);
             }
         }
         messages.extend(writer.finish());
     }
-    Ok(messages)
+    messages
 }
 
 fn heading(writer: &mut HtmlWriter, title: &str) {

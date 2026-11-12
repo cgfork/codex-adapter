@@ -18,7 +18,7 @@ static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture {
     root: PathBuf,
-    adapter: Option<Child>,
+    codebridge: Option<Child>,
 }
 
 impl Fixture {
@@ -28,7 +28,7 @@ impl Fixture {
             .unwrap()
             .as_nanos();
         let root = std::env::temp_dir().join(format!(
-            "adapter shutdown {} {timestamp} {}",
+            "codebridge shutdown {} {timestamp} {}",
             std::process::id(),
             NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
         ));
@@ -36,23 +36,23 @@ impl Fixture {
         let executable = root.join("fake codex");
         fs::write(
             &executable,
-            format!("#!/bin/sh\nprintf '%s\\n' \"$$\" > \"$ADAPTER_TEST_ROOT/pid\"\n{script}\n"),
+            format!("#!/bin/sh\nprintf '%s\\n' \"$$\" > \"$CODEBRIDGE_TEST_ROOT/pid\"\n{script}\n"),
         )
         .unwrap();
         fs::set_permissions(executable, fs::Permissions::from_mode(0o700)).unwrap();
         Self {
             root,
-            adapter: None,
+            codebridge: None,
         }
     }
 
     fn start(&mut self, arguments: &[&str]) {
-        let child = Command::new(env!("CARGO_BIN_EXE_adapter"))
+        let child = Command::new(env!("CARGO_BIN_EXE_codebridge"))
             .process_group(0)
             .env_clear()
             .env("PATH", "")
             .env("TELOXIDE_TOKEN", "123456:local-shutdown-test")
-            .env("ADAPTER_TEST_ROOT", &self.root)
+            .env("CODEBRIDGE_TEST_ROOT", &self.root)
             .arg("--cwd")
             .arg(&self.root)
             .arg("--codex")
@@ -63,7 +63,7 @@ impl Fixture {
             .stderr(File::create(self.root.join("stderr")).unwrap())
             .spawn()
             .unwrap();
-        self.adapter = Some(child);
+        self.codebridge = Some(child);
     }
 
     fn diagnostics(&self) -> String {
@@ -91,10 +91,10 @@ impl Fixture {
     }
 
     fn assert_running(&mut self) {
-        let status = self.adapter.as_mut().unwrap().try_wait().unwrap();
+        let status = self.codebridge.as_mut().unwrap().try_wait().unwrap();
         assert!(
             status.is_none(),
-            "adapter exited before readiness: {status:?}; {}",
+            "codebridge exited before readiness: {status:?}; {}",
             self.diagnostics()
         );
     }
@@ -105,7 +105,7 @@ impl Fixture {
 
     fn interrupt_target(&mut self, process_group: bool) -> ExitStatus {
         self.assert_running();
-        let pid = self.adapter.as_ref().unwrap().id();
+        let pid = self.codebridge.as_ref().unwrap().id();
         let sent = if process_group {
             Command::new("/bin/kill")
                 .args(["-INT", "--", &format!("-{pid}")])
@@ -116,15 +116,15 @@ impl Fixture {
         } else {
             signal(pid, "-INT")
         };
-        assert!(sent, "failed to signal adapter PID {pid}");
+        assert!(sent, "failed to signal codebridge PID {pid}");
         let deadline = Instant::now() + DEADLINE;
         loop {
-            if let Some(status) = self.adapter.as_mut().unwrap().try_wait().unwrap() {
+            if let Some(status) = self.codebridge.as_mut().unwrap().try_wait().unwrap() {
                 return status;
             }
             assert!(
                 Instant::now() < deadline,
-                "adapter did not stop after Ctrl-C; {}",
+                "codebridge did not stop after Ctrl-C; {}",
                 self.diagnostics()
             );
             thread::sleep(Duration::from_millis(10));
@@ -133,7 +133,7 @@ impl Fixture {
 
     fn assert_codex_reaped(&self) {
         let pid = self.codex_pid().expect("fake Codex must record its PID");
-        // kill -0 also sees a zombie, so this checks that the adapter waited for
+        // kill -0 also sees a zombie, so this checks that the codebridge waited for
         // its child, rather than merely sending a termination signal.
         assert!(
             !signal(pid, "-0"),
@@ -153,12 +153,12 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        if let Some(child) = self.adapter.as_mut() {
+        if let Some(child) = self.codebridge.as_mut() {
             let _ = child.kill();
             let _ = child.wait();
         }
         // Also clean up on a failing assertion against an implementation which
-        // leaves its Codex child running after the adapter itself exits.
+        // leaves its Codex child running after the codebridge itself exits.
         if let Some(pid) = self.codex_pid() {
             let _ = signal(pid, "-KILL");
         }
@@ -178,7 +178,7 @@ fn signal(pid: u32, signal: &str) -> bool {
 #[test]
 fn exec_ctrl_c_exits_130_and_reaps_codex() {
     let mut fixture =
-        Fixture::new("printf 'ready\\n' > \"$ADAPTER_TEST_ROOT/ready\"\nexec /bin/sleep 300");
+        Fixture::new("printf 'ready\\n' > \"$CODEBRIDGE_TEST_ROOT/ready\"\nexec /bin/sleep 300");
     fixture.start(&["exec", "wait for interruption"]);
     fixture.wait_ready();
     let status = fixture.interrupt();
@@ -191,9 +191,9 @@ fn bridge_ctrl_c_during_initialize_closes_stdin_and_reaps_codex() {
     let mut fixture = Fixture::new(
         r#"
 IFS= read -r initialize || exit 1
-printf 'ready\n' > "$ADAPTER_TEST_ROOT/ready"
+printf 'ready\n' > "$CODEBRIDGE_TEST_ROOT/ready"
 while IFS= read -r request; do :; done
-printf 'eof\n' > "$ADAPTER_TEST_ROOT/eof"
+printf 'eof\n' > "$CODEBRIDGE_TEST_ROOT/eof"
 "#,
     );
     fixture.start(&["bridge", "--proxy", "http://127.0.0.1:1"]);
@@ -212,7 +212,7 @@ fn bridge_ctrl_c_kills_and_reaps_codex_that_ignores_stdin_eof() {
     let mut fixture = Fixture::new(
         r#"
 IFS= read -r initialize || exit 1
-printf 'ready\n' > "$ADAPTER_TEST_ROOT/ready"
+printf 'ready\n' > "$CODEBRIDGE_TEST_ROOT/ready"
 exec /bin/sleep 300
 "#,
     );
@@ -228,7 +228,7 @@ fn bridge_terminal_ctrl_c_during_initialize_exits_successfully() {
     let mut fixture = Fixture::new(
         r#"
 IFS= read -r initialize || exit 1
-printf 'ready\n' > "$ADAPTER_TEST_ROOT/ready"
+printf 'ready\n' > "$CODEBRIDGE_TEST_ROOT/ready"
 exec /bin/sleep 300
 "#,
     );
@@ -252,9 +252,9 @@ fn bridge_ctrl_c_during_telegram_startup_reaps_codex() {
 IFS= read -r initialize || exit 1
 printf '%s\n' '{"id":1,"result":{}}'
 IFS= read -r initialized || exit 1
-printf 'ready\n' > "$ADAPTER_TEST_ROOT/ready"
+printf 'ready\n' > "$CODEBRIDGE_TEST_ROOT/ready"
 while IFS= read -r request; do :; done
-printf 'eof\n' > "$ADAPTER_TEST_ROOT/eof"
+printf 'eof\n' > "$CODEBRIDGE_TEST_ROOT/eof"
 "#,
     );
     fixture.start(&["bridge", "--proxy", &proxy]);

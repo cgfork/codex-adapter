@@ -1,19 +1,7 @@
 use std::{error::Error, fmt};
 
+use codebridge_core::AgentOutput;
 use serde_json::Value;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AgentOutput {
-    Message(String),
-    Plan(String),
-    Command {
-        command: String,
-        output: String,
-        exit_code: Option<i64>,
-    },
-    FilesChanged(Vec<String>),
-    Error(String),
-}
 
 #[derive(Debug)]
 pub struct JsonlError {
@@ -54,7 +42,7 @@ pub fn parse_jsonl(stdout: &str) -> Result<Vec<AgentOutput>, JsonlError> {
     Ok(output)
 }
 
-fn parse_event(event: &Value) -> Option<AgentOutput> {
+pub(crate) fn parse_event(event: &Value) -> Option<AgentOutput> {
     match event["type"].as_str() {
         Some("item.completed") => return parse_item(&event["item"]),
         Some("error") => return error_message(event),

@@ -1,7 +1,12 @@
+use codebridge_core::{
+    ApprovalDecision, BotEvent, Command as CoreCommand, IncomingMessage as CoreIncomingMessage,
+};
 use teloxide::{
     types::{CallbackQuery, ChatId, Message},
     utils::command::BotCommands,
 };
+
+use crate::TelegramBot;
 
 #[derive(Clone, Debug, PartialEq, Eq, BotCommands)]
 #[command(rename_rule = "lowercase")]
@@ -77,6 +82,58 @@ impl IncomingMessage {
             signal,
             query: Box::new(query),
         })
+    }
+
+    pub fn into_core(self) -> Option<BotEvent<TelegramBot>> {
+        match self {
+            Self::Raw(message) => Some(CoreIncomingMessage::Message {
+                chat_id: message.chat.id,
+                sender: human_sender(&message),
+                command: None,
+                text: message.text().map(str::to_owned),
+            }),
+            Self::Command { command, message } => Some(CoreIncomingMessage::Message {
+                chat_id: message.chat.id,
+                sender: human_sender(&message),
+                command: Some(command.into()),
+                text: message.text().map(str::to_owned),
+            }),
+            Self::ApprovalSignal { signal, query } => {
+                let message = query.regular_message()?;
+                Some(CoreIncomingMessage::Approval {
+                    chat_id: message.chat.id,
+                    message_id: message.id,
+                    sender: (!query.from.is_bot).then_some(query.from.id),
+                    decision: match signal {
+                        ApprovalSignal::Allow => ApprovalDecision::Allow,
+                        ApprovalSignal::Deny => ApprovalDecision::Deny,
+                    },
+                })
+            }
+        }
+    }
+}
+
+fn human_sender(message: &Message) -> Option<teloxide::types::UserId> {
+    if message.sender_chat.is_some() {
+        return None;
+    }
+    message
+        .from
+        .as_ref()
+        .and_then(|user| (!user.is_bot).then_some(user.id))
+}
+
+impl From<Command> for CoreCommand {
+    fn from(command: Command) -> Self {
+        match command {
+            Command::Sessions => Self::Sessions,
+            Command::Interrupt => Self::Interrupt,
+            Command::Init => Self::Init,
+            Command::New => Self::New,
+            Command::Delete => Self::Delete,
+            Command::Exec(prompt) => Self::Exec(prompt),
+        }
     }
 }
 

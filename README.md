@@ -1,45 +1,67 @@
-# codex-adapter
+# Codebridge
 
 A Rust CLI that runs one-off Codex tasks or connects Telegram chats to a Codex
 app-server. Requires Rust 1.85 or newer, Cargo, and an installed, authenticated
-Codex executable. The adapter uses the existing Codex configuration and credentials.
+Codex executable. Codebridge uses the existing Codex configuration and credentials.
 
 ## Install and run
 
 Build from the repository root:
 
 ```sh
-cargo build --release -p adapter
-./target/release/adapter --help
+cargo build --release -p codebridge
+./target/release/codebridge --help
+```
+
+To install the executable on `PATH` using the checked-in dependency versions:
+
+```sh
+cargo install --path . --locked
 ```
 
 The CLI requires one of two subcommands:
 
 ```text
-adapter [--cwd <PATH>] [--codex <PATH>] exec <PROMPT>
-adapter [--cwd <PATH>] [--codex <PATH>] bridge [--proxy <URL>] [--allowed-user-id <USER_ID>]
+codebridge [--cwd <PATH>] [--codex <PATH>] exec <PROMPT>
+codebridge [--cwd <PATH>] [--codex <PATH>] bridge [--proxy <URL>] [--allowed-user-id <USER_ID>]
 ```
 
-`--cwd` (also `-C`) defaults to `.` and is resolved against the adapter's startup
+`--cwd` (also `-C`) defaults to `.` and is resolved against Codebridge's startup
 directory before Codex starts. `--codex` defaults to `codex` on `PATH`; use an
 absolute path to select a particular installation. Both options work before or
 after the subcommand. `--help` and `--version` are available without starting Codex.
+
+### Codex project trust
+
+If Codex reports that project-local config, hooks, and exec policies are disabled,
+add or update the project's entry in your user-level `~/.codex/config.toml`
+(`$CODEX_HOME/config.toml` when `CODEX_HOME` is set):
+
+```toml
+[projects."/absolute/path/to/project"]
+trust_level = "trusted"
+```
+
+Use the absolute project path shown in the diagnostic. Update an existing entry
+instead of adding a duplicate table, then restart the bridge. Trust enables that
+project's local configuration, hooks, and execution policies; set it for projects
+you trust. See the [official Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 
 ## One-off execution
 
 Pass the entire prompt as one quoted argument:
 
 ```sh
-cargo run -p adapter -- exec "Explain the current project"
-./target/release/adapter -C /path/to/project exec "Run the tests"
-./target/release/adapter exec "Review this project" --codex /path/to/codex
+cargo run -p codebridge -- exec "Explain the current project"
+./target/release/codebridge -C /path/to/project exec "Run the tests"
+./target/release/codebridge exec "Review this project" --codex /path/to/codex
 ```
 
-The prompt must contain non-whitespace text. The adapter invokes
+The prompt must contain non-whitespace text. Codebridge invokes
 `codex exec --json --color never --ephemeral -`, writes the prompt to stdin, and
 forwards the collected stdout and stderr unchanged to the corresponding terminal
 streams. Output appears after the subprocess exits; it is not streamed live.
-The adapter returns the subprocess exit code, or `128 + signal` on Unix when
+Codebridge returns the subprocess exit code, or `128 + signal` on Unix when
 terminated by a signal. Invalid CLI arguments exit with code 2; startup and
 transport failures produce an error on stderr and exit with code 1.
 Ctrl-C cancels the task, terminates and waits for the Codex subprocess, and exits
@@ -53,14 +75,14 @@ Set the bot token in the environment and start the bridge:
 
 ```sh
 export TELOXIDE_TOKEN='your-telegram-bot-token'
-cargo run -p adapter -- --cwd /path/to/project bridge
+cargo run -p codebridge -- --cwd /path/to/project bridge
 ```
 
 To accept input only from your Telegram account, supply its positive numeric
 user ID with the bridge-only `--allowed-user-id` option:
 
 ```sh
-cargo run -p adapter -- --cwd /path/to/project bridge --allowed-user-id 123456789
+cargo run -p codebridge -- --cwd /path/to/project bridge --allowed-user-id 123456789
 ```
 
 Use the account's Telegram `from.id`, not its `@username`, the bot's ID, or a chat
@@ -81,8 +103,8 @@ access for all users.
 `bridge` requires a nonempty `TELOXIDE_TOKEN`. It validates Telegram proxy
 configuration before launching `codex app-server`, initializes the connection,
 and polls Telegram. Ctrl-C works during startup, Telegram polling, and Codex RPC
-requests. It stops the Telegram dispatcher, cancels one-off jobs, invalidates
-pending approvals, and closes the app-server's input so it can exit. The adapter
+requests. It stops Telegram polling, cancels one-off jobs, invalidates
+pending approvals, and closes the app-server's input so it can exit. Codebridge
 waits up to one second for the app-server, then terminates and waits for it if
 necessary. A successful Ctrl-C shutdown exits with code 0.
 
@@ -90,9 +112,9 @@ Use the bridge-only `--proxy` option to send Telegram requests through an HTTP
 or SOCKS proxy:
 
 ```sh
-cargo run -p adapter -- bridge --proxy http://127.0.0.1:8080
-cargo run -p adapter -- bridge --proxy socks5h://127.0.0.1:1080
-TELOXIDE_PROXY=http://127.0.0.1:8080 cargo run -p adapter -- bridge
+cargo run -p codebridge -- bridge --proxy http://127.0.0.1:8080
+cargo run -p codebridge -- bridge --proxy socks5h://127.0.0.1:1080
+TELOXIDE_PROXY=http://127.0.0.1:8080 cargo run -p codebridge -- bridge
 ```
 
 `socks5h://` resolves Telegram hostnames through the proxy. Proxy selection is
@@ -106,7 +128,7 @@ An explicit `--proxy` or `TELOXIDE_PROXY` takes precedence over the standard
 proxy environment, including `NO_PROXY` exclusions. When neither is set,
 reqwest keeps its standard environment proxy and `NO_PROXY` behavior.
 
-`--proxy` and `TELOXIDE_PROXY` configure Telegram requests only; `adapter exec`
+`--proxy` and `TELOXIDE_PROXY` configure Telegram requests only; `codebridge exec`
 does not read `TELOXIDE_PROXY`. Standard proxy environment variables are inherited
 by the Codex subprocess and can also affect its own network requests. Set
 `TELOXIDE_PROXY` when only Telegram should use the proxy.
@@ -114,7 +136,7 @@ by the Codex subprocess and can also affect its own network requests. Set
 Each Telegram chat has its own active Codex thread and at most one running
 conversation turn. The first text prompt creates a session automatically.
 Completed agent messages, plans, commands, file changes, and errors are rendered
-and sent to the originating chat through `tgbot::send`; incremental deltas and
+and sent to the originating chat through `TelegramBot`; incremental deltas and
 protocol bookkeeping are omitted. Long replies are split to fit Telegram limits.
 
 | Telegram input | Behavior |
@@ -164,21 +186,21 @@ noninteractive exec transport and does not offer Telegram approval buttons.
 
 ## Logging
 
-The `adapter` and standalone `tgbot` binaries initialize `tracing` and write
+The `codebridge` and standalone `tgbot` binaries initialize `tracing` and write
 timestamped logs to stderr, with levels, module targets, and fields such as chat,
 thread, turn, and RPC IDs. Libraries emit events through the caller's subscriber.
-The default filter is `warn,adapter=info,tgbot=info,codexbridge=info`: application
+The default filter is `warn,codebridge=info,codebridge_core=info,tgbot=info,codexbridge=info`: application
 lifecycle events are visible, while dependencies log warnings and errors.
 
 Set `RUST_LOG` to override the filter, for example:
 
 ```sh
-RUST_LOG=warn,adapter=debug,codexbridge=debug,tgbot=debug cargo run -p adapter -- bridge
+RUST_LOG=warn,codebridge=debug,codebridge_core=debug,codexbridge=debug,tgbot=debug cargo run -p codebridge -- bridge
 RUST_LOG=error cargo run -p tgbot
-RUST_LOG=off ./target/release/adapter exec "Explain the project"
+RUST_LOG=off ./target/release/codebridge exec "Explain the project"
 ```
 
-Missing or invalid filters use the default. Normal `adapter exec` lifecycle
+Missing or invalid filters use the default. Normal `codebridge exec` lifecycle
 events use debug level, preserving its raw stdout and stderr forwarding by
 default. `RUST_LOG=off` disables application logs, including error diagnostics;
 Codex subprocess output and exit codes are still forwarded. The standalone
@@ -187,10 +209,11 @@ metadata without logging prompt text, message bodies, bot tokens, or proxy URLs.
 
 ## Workspace and development
 
-- `src/`: CLI, bridge event loop, and in-memory session routing.
-- `crates/codexbridge/`: Codex exec/app-server transports and JSONL normalization.
-- `crates/tgbot/`: Telegram polling, message classification, and output rendering.
-- `tests/`: process-level adapter CLI tests.
+- `src/`: CLI and composition of the Telegram and Codex adapters.
+- `crates/core/`: bot/agent traits, session stores, shared events, and the generic session/approval bridge.
+- `crates/codexbridge/`: Codex transports, event normalization, and the `CodeAgent` implementation.
+- `crates/tgbot/`: Telegram transport, message classification/rendering, and the `Bot` implementation.
+- `tests/`: process-level Codebridge CLI tests.
 
 Run from the repository root:
 
@@ -203,18 +226,47 @@ cargo fmt --all -- --check
 
 The workspace uses Rust's built-in test framework, Rustfmt (`rustfmt.toml`), and
 Clippy. Install the development tools with `rustup component add rustfmt clippy`.
-To format just the adapter implementation, run:
+To format just the Codebridge implementation, run:
 
 ```sh
-rustfmt --edition 2024 src/main.rs src/access.rs src/bridge.rs src/outbox.rs src/sessions.rs
+rustfmt --edition 2024 src/main.rs src/bridge.rs
 ```
 
 Keep `Cargo.lock` under version control for reproducible executable builds. Never
 commit bot tokens or private Codex configuration.
 
+The workspace patches `proc-macro-error2` 2.0.1 with a vendored copy containing the
+`proc_macro` visibility fix proposed in [upstream PR #14](https://github.com/GnomedDev/proc-macro-error-2/pull/14).
+This resolves Rust's future-incompatibility warning without suppressing it. The
+vendored crate's `PATCH.md` records its origin and the change.
+
 The standalone Telegram event receiver remains available as `cargo run -p tgbot`;
 it also requires `TELOXIDE_TOKEN`. Library callers can use `tgbot::run(bot, sender)`
-and `tgbot::send(bot, message)` independently of the adapter CLI.
+and `tgbot::send(bot, message)` independently of the Codebridge CLI.
+
+## Core library
+
+`crates/core` is named `codebridge-core` within this workspace and imported
+as `codebridge_core`. It defines `Bot` and `CodeAgent`, normalized incoming events
+and agent output, and `Bridge<B, A, S>` for composing any implementations of those
+traits. The core depends on Tokio and tracing; it contains no Telegram SDK types,
+Codex wire messages, credentials, or process-launch configuration.
+
+The CLI composes `tgbot::TelegramBot` and `codexbridge::CodexAgent` through this
+bridge. Session management, independent tasks, access checks, approvals, ordered
+chat deliveries, and shutdown all run in the shared implementation. Existing
+standalone Telegram and raw Codex APIs remain available.
+
+Session history uses an async `Store` trait with a generic associated
+`Session<'a>` type for borrowed or owned history handles. `Bridge::new` defaults to `Memory`,
+whose clones share histories; `.with_store(store)` accepts another backend.
+The bridge restores saved session IDs at startup and persists changes before
+acknowledging them. Active turns and approvals remain scoped to the current run.
+The CLI uses the default memory store, so its session list resets on restart.
+
+See [the core API guide](docs/core.md) for the adapter contracts, a composition
+example, and cancellation requirements. Run the provider-independent tests with
+`cargo test -p codebridge-core`.
 
 ## Telegram library
 
@@ -277,7 +329,7 @@ Long messages are split at a maximum of 4096 UTF-16 code units of visible text.
 Every chunk has balanced HTML tags, intact entities, and complete Unicode
 characters. HTML from agent text is escaped. Empty output sends no messages.
 Invalid JSONL reports its line number before anything is sent, and Telegram
-send errors propagate to the library caller. The adapter handles transport,
+send errors propagate to the library caller. Codebridge handles transport,
 output buffering, and ordered delivery separately.
 
 Use `tgbot::render_jsonl(&stdout)` to inspect the resulting HTML without sending

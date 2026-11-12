@@ -144,8 +144,8 @@ impl AppServer {
             "initialize",
             json!({
                 "clientInfo": {
-                    "name": "codex_adapter",
-                    "title": "Codex Telegram Adapter",
+                    "name": "codebridge",
+                    "title": "Codebridge Telegram Bridge",
                     "version": env!("CARGO_PKG_VERSION")
                 }
             }),
@@ -212,8 +212,9 @@ impl AppServer {
         tracing::debug!(rpc_id = ?id, "Rejecting unsupported Codex RPC request");
         self.write(&json!({
             "id": id,
-            "error": { "code": -32601, "message": "Request is not supported by the Telegram adapter" }
-        })).await
+            "error": { "code": -32601, "message": "Request is not supported by codebridge" }
+        }))
+        .await
     }
 
     pub async fn start_thread(&mut self, codex: &Codex) -> BridgeResult<String> {

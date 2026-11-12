@@ -1,3 +1,6 @@
+use codebridge_core::{
+    ApprovalDecision, Command as CoreCommand, IncomingMessage as CoreIncomingMessage,
+};
 use serde_json::{Value, json};
 use teloxide::{
     types::{CallbackQuery, Message},
@@ -44,7 +47,7 @@ fn recognizes_all_commands_and_preserves_the_message() {
     ] {
         let original = text_message(text);
         let IncomingMessage::Command { command, message } =
-            IncomingMessage::from_message(original.clone(), "adapter_bot")
+            IncomingMessage::from_message(original.clone(), "codebridge_bot")
         else {
             panic!("expected command for {text}");
         };
@@ -59,11 +62,11 @@ fn recognizes_all_commands_and_preserves_the_message() {
 #[test]
 fn recognizes_commands_addressed_to_this_bot() {
     for (text, expected) in [
-        ("/sessions@adapter_bot", Command::Sessions),
-        ("/delete@adapter_bot", Command::Delete),
+        ("/sessions@codebridge_bot", Command::Sessions),
+        ("/delete@codebridge_bot", Command::Delete),
     ] {
         let IncomingMessage::Command { command, .. } =
-            IncomingMessage::from_message(text_message(text), "adapter_bot")
+            IncomingMessage::from_message(text_message(text), "codebridge_bot")
         else {
             panic!("expected command for {text}");
         };
@@ -91,7 +94,7 @@ fn preserves_plain_text_unknown_commands_and_commands_for_other_bots_as_raw_mess
         "please /sessions",
     ] {
         let IncomingMessage::Raw(message) =
-            IncomingMessage::from_message(text_message(text), "adapter_bot")
+            IncomingMessage::from_message(text_message(text), "codebridge_bot")
         else {
             panic!("expected raw message for {text}");
         };
@@ -110,7 +113,7 @@ fn preserves_media_as_raw_messages() {
         "height": 480
     }]);
     let message = serde_json::from_value(payload).unwrap();
-    let IncomingMessage::Raw(message) = IncomingMessage::from_message(message, "adapter_bot")
+    let IncomingMessage::Raw(message) = IncomingMessage::from_message(message, "codebridge_bot")
     else {
         panic!("expected raw media message");
     };
@@ -144,4 +147,139 @@ fn ignores_callbacks_without_recognized_approval_data() {
     for data in [None, Some(""), Some("unknown"), Some("allow:unknown")] {
         assert!(IncomingMessage::from_callback_query(callback_query(data)).is_none());
     }
+}
+
+#[test]
+fn normalizes_all_commands_and_plain_text() {
+    for (text, expected) in [
+        ("/sessions", Some(CoreCommand::Sessions)),
+        ("/interrupt", Some(CoreCommand::Interrupt)),
+        ("/init", Some(CoreCommand::Init)),
+        ("/new", Some(CoreCommand::New)),
+        ("/delete", Some(CoreCommand::Delete)),
+        ("/exec task", Some(CoreCommand::Exec("task".into()))),
+        ("hello", None),
+        ("/sessions@other_bot", None),
+    ] {
+        let event = IncomingMessage::from_message(text_message(text), "codebridge_bot")
+            .into_core()
+            .unwrap();
+        let CoreIncomingMessage::Message {
+            chat_id,
+            sender,
+            command,
+            text: body,
+        } = event
+        else {
+            panic!("expected message");
+        };
+        assert_eq!(chat_id.0, 123);
+        assert_eq!(sender.unwrap().0, 123);
+        assert_eq!(command, expected);
+        assert_eq!(body.as_deref(), Some(text));
+    }
+}
+
+#[test]
+fn normalized_sender_only_identifies_a_person_acting_as_themselves() {
+    let mut payload = message_payload();
+    payload["text"] = json!("/delete");
+    for change in ["missing", "bot", "anonymous", "channel"] {
+        let mut case = payload.clone();
+        match change {
+            "missing" => {
+                case.as_object_mut().unwrap().remove("from");
+            }
+            "bot" => case["from"]["is_bot"] = json!(true),
+            "anonymous" => {
+                case["sender_chat"] =
+                    json!({"id": -100123, "type": "supergroup", "title": "Admins"})
+            }
+            "channel" => {
+                case["sender_chat"] = json!({"id": -100456, "type": "channel", "title": "News"})
+            }
+            _ => unreachable!(),
+        }
+        let message: Message = serde_json::from_value(case).unwrap();
+        let CoreIncomingMessage::Message {
+            sender, command, ..
+        } = IncomingMessage::from_message(message, "codebridge_bot")
+            .into_core()
+            .unwrap()
+        else {
+            panic!("expected message")
+        };
+        assert_eq!(sender, None, "{change}");
+        assert_eq!(command, Some(CoreCommand::Delete));
+    }
+
+    let mut forwarded = payload;
+    forwarded["from"]["id"] = json!(7);
+    forwarded["forward_origin"] = json!({"type":"user","date":1_700_000_000,
+        "sender_user":{"id":123,"is_bot":false,"first_name":"Owner"}});
+    let CoreIncomingMessage::Message { sender, .. } =
+        IncomingMessage::from_message(serde_json::from_value(forwarded).unwrap(), "codebridge_bot")
+            .into_core()
+            .unwrap()
+    else {
+        panic!("expected message")
+    };
+    assert_eq!(sender.unwrap().0, 7);
+}
+
+#[test]
+fn media_and_approval_callbacks_normalize_without_inventing_identity() {
+    let mut photo = message_payload();
+    photo["photo"] =
+        json!([{"file_id":"photo-id","file_unique_id":"unique-id","width":1,"height":1}]);
+    let CoreIncomingMessage::Message { text, sender, .. } =
+        IncomingMessage::from_message(serde_json::from_value(photo).unwrap(), "codebridge_bot")
+            .into_core()
+            .unwrap()
+    else {
+        panic!("expected message")
+    };
+    assert_eq!(text, None);
+    assert_eq!(sender.unwrap().0, 123);
+
+    for (signal, decision) in [
+        (ApprovalSignal::Allow, ApprovalDecision::Allow),
+        (ApprovalSignal::Deny, ApprovalDecision::Deny),
+    ] {
+        let event =
+            IncomingMessage::from_callback_query(callback_query(Some(signal.callback_data())))
+                .unwrap()
+                .into_core()
+                .unwrap();
+        assert_eq!(
+            event,
+            CoreIncomingMessage::Approval {
+                chat_id: teloxide::types::ChatId(123),
+                message_id: teloxide::types::MessageId(42),
+                sender: Some(teloxide::types::UserId(123)),
+                decision,
+            }
+        );
+    }
+
+    let mut bot_callback = callback_query(Some("allow"));
+    bot_callback.from.is_bot = true;
+    let CoreIncomingMessage::Approval { sender, .. } =
+        IncomingMessage::from_callback_query(bot_callback)
+            .unwrap()
+            .into_core()
+            .unwrap()
+    else {
+        panic!("expected approval")
+    };
+    assert_eq!(sender, None);
+
+    let mut inline = callback_query(Some("allow"));
+    inline.message = None;
+    assert!(
+        IncomingMessage::from_callback_query(inline)
+            .unwrap()
+            .into_core()
+            .is_none()
+    );
 }

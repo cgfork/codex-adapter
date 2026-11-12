@@ -1,0 +1,13 @@
+[package]
+name = "codebridge-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Bot and code agent interfaces and a reusable conversation bridge"
+
+[dependencies]
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true
